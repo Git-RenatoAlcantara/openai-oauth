@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import {
 	parseCliArgs,
 	toMissingAuthFileMessage,
@@ -43,19 +43,23 @@ describe("openai oauth cli", () => {
 
 	test("formats the default startup message for local usage", () => {
 		expect(
-			toStartupMessage({
-				host: "127.0.0.1",
-				port: 10531,
-				models: undefined,
-				baseURL: undefined,
-				clientId: undefined,
-				tokenUrl: undefined,
-				authFilePath: undefined,
-			}),
+			toStartupMessage(
+				{
+					host: "127.0.0.1",
+					port: 10531,
+					models: undefined,
+					baseURL: undefined,
+					clientId: undefined,
+					tokenUrl: undefined,
+					authFilePath: undefined,
+				},
+				["gpt-5.4", "gpt-5.3-codex"],
+			),
 		).toBe(
 			[
 				"OpenAI-compatible endpoint ready at http://127.0.0.1:10531/v1",
 				"Use this as your OpenAI base URL. No API key is required.",
+				"Available Models: gpt-5.4, gpt-5.3-codex",
 			].join("\n"),
 		)
 	})
@@ -67,5 +71,17 @@ describe("openai oauth cli", () => {
 		expect(toMissingAuthFileMessage("/tmp/missing-auth.json")).toContain(
 			"/tmp/missing-auth.json",
 		)
+	})
+
+	test("does not use hidden environment variable overrides", () => {
+		vi.stubEnv("HOST", "0.0.0.0")
+		vi.stubEnv("PORT", "3333")
+
+		expect(toServerOptions({})).toMatchObject({
+			host: undefined,
+			port: 10531,
+		})
+
+		vi.unstubAllEnvs()
 	})
 })

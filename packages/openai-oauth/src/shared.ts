@@ -6,7 +6,6 @@ import type {
 } from "node:http"
 import type { AddressInfo } from "node:net"
 import type { ChatRequest, JsonValue, UsageLike } from "./types.js"
-import { defaultOpenAIOAuthModels } from "./types.js"
 
 export const DEFAULT_HOST = "127.0.0.1"
 export const DEFAULT_PORT = 10531
@@ -148,21 +147,10 @@ export const usesServerReplayState = (
 	)
 }
 
-export const resolveModels = (models: string[] | undefined): string[] => {
-	if (Array.isArray(models) && models.length > 0) {
-		return models
-	}
-
-	const envModels = process.env.CODEX_OPENAI_MODEL_IDS
-	if (typeof envModels === "string" && envModels.trim().length > 0) {
-		return envModels
-			.split(",")
-			.map((entry) => entry.trim())
-			.filter((entry) => entry.length > 0)
-	}
-
-	return [...defaultOpenAIOAuthModels]
-}
+export const resolveModels = (
+	models: string[] | undefined,
+): string[] | undefined =>
+	Array.isArray(models) && models.length > 0 ? [...models] : undefined
 
 export const copyUpstreamResponse = (response: Response): Response => {
 	const headers = new Headers(response.headers)

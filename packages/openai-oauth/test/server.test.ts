@@ -60,6 +60,108 @@ describe("openai oauth server", () => {
 		})
 	})
 
+	test("loads account models from codex when no override is configured", async () => {
+		const authFilePath = await createAuthFile()
+		const fetch = vi.fn(async (input: RequestInfo | URL) => {
+			expect(String(input)).toContain(
+				"/backend-api/codex/models?client_version=",
+			)
+			return new Response(
+				JSON.stringify({
+					models: [
+						{ slug: "gpt-5.2" },
+						{ slug: "gpt-5.1-codex" },
+						{ slug: "gpt-5.2" },
+					],
+				}),
+				{
+					status: 200,
+					headers: {
+						"Content-Type": "application/json",
+					},
+				},
+			)
+		})
+		const handler = createOpenAIOAuthFetchHandler({
+			authFilePath,
+			ensureFresh: false,
+			fetch,
+		})
+
+		const response = await handler(
+			new Request("http://localhost/v1/models", {
+				method: "GET",
+			}),
+		)
+
+		expect(response.status).toBe(200)
+		expect(fetch).toHaveBeenCalledTimes(1)
+		await expect(response.json()).resolves.toEqual({
+			object: "list",
+			data: [
+				{
+					id: "gpt-5.2",
+					object: "model",
+					created: 0,
+					owned_by: "codex-oauth",
+				},
+				{
+					id: "gpt-5.1-codex",
+					object: "model",
+					created: 0,
+					owned_by: "codex-oauth",
+				},
+			],
+		})
+
+		await fs.rm(path.dirname(authFilePath), {
+			recursive: true,
+			force: true,
+		})
+	})
+
+	test("returns an upstream error when codex model discovery fails", async () => {
+		const authFilePath = await createAuthFile()
+		const fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						detail: "This account does not support codex model discovery.",
+					}),
+					{
+						status: 403,
+						headers: {
+							"Content-Type": "application/json",
+						},
+					},
+				),
+		)
+		const handler = createOpenAIOAuthFetchHandler({
+			authFilePath,
+			ensureFresh: false,
+			fetch,
+		})
+
+		const response = await handler(
+			new Request("http://localhost/v1/models", {
+				method: "GET",
+			}),
+		)
+
+		expect(response.status).toBe(502)
+		await expect(response.json()).resolves.toEqual({
+			error: {
+				message: "This account does not support codex model discovery.",
+				type: "upstream_error",
+			},
+		})
+
+		await fs.rm(path.dirname(authFilePath), {
+			recursive: true,
+			force: true,
+		})
+	})
+
 	test("reports the replay state mode in health", async () => {
 		const handler = createOpenAIOAuthFetchHandler()
 		const health = await handler(

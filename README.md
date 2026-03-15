@@ -26,34 +26,34 @@ Use this as your OpenAI base URL. No API key is required.
 This is a Vercel AI SDK Provider.
 
 ```ts
-import { generateText } from "ai"
-import { createOpenAIOAuth } from "openai-oauth-provider"
+import { generateText } from "ai";
+import { createOpenAIOAuth } from "openai-oauth-provider";
 
-const openai = createOpenAIOAuth()
+const openai = createOpenAIOAuth();
 
 const result = await generateText({
 	model: openai("gpt-5.4"),
 	prompt: "write an essay about dogs",
-})
+});
 
-console.log(result.text)
+console.log(result.text);
 ```
 
 ## Configuration
 
 The CLI and the provider share the same core OAuth transport settings.
 
-| Config | CLI | Provider | Default | Description |
-| --- | --- | --- | --- | --- |
-| Host binding | `--host` | N/A | `127.0.0.1` | Host interface the local proxy binds to. |
-| Port | `--port` | N/A | `10531` | Port the local proxy binds to. |
-| Model allowlist | `--models` | N/A | `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.3-codex-spark`, `gpt-5.2`, `gpt-5.1`, `gpt-5.1-codex`, `gpt-5.1-codex-max` | Comma-separated list of model ids exposed by `/v1/models`. |
-| Upstream base URL | `--base-url` | `baseURL` | `https://chatgpt.com/backend-api/codex` | Override the upstream Codex base URL. |
-| OAuth client id | `--oauth-client-id` | `clientId` | `app_EMoamEEZ73f0CkXaXp7hrann` | Override the OAuth client id used for refresh. |
-| OAuth token URL | `--oauth-token-url` | `tokenUrl` | `https://auth.openai.com/oauth/token` | Override the OAuth token URL used for refresh. |
-| Auth file path | `--oauth-file` | `authFilePath` | `--oauth-file` path if provided, otherwise `$CHATGPT_LOCAL_HOME/auth.json`, `$CODEX_HOME/auth.json`, `~/.chatgpt-local/auth.json`, `~/.codex/auth.json` | Override where the local OAuth auth file is discovered. |
-| Ensure fresh tokens | N/A | `ensureFresh` | `true` | Control whether access tokens are refreshed automatically. |
-| Provider name | N/A | `name` | `openai` | Override the provider name exposed to Vercel AI SDK internals. |
+| Config              | CLI                 | Provider       | Default                                                                                                                                                 | Description                                                                                                                        |
+| ------------------- | ------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Host binding        | `--host`            | N/A            | `127.0.0.1`                                                                                                                                             | Host interface the local proxy binds to.                                                                                           |
+| Port                | `--port`            | N/A            | `10531`                                                                                                                                                 | Port the local proxy binds to.                                                                                                     |
+| Model allowlist     | `--models`          | N/A            | Account-specific Codex models discovered from ChatGPT                                                                                                   | Comma-separated list of model ids exposed by `/v1/models`. When omitted, the CLI discovers the models your account has access to. |
+| Upstream base URL   | `--base-url`        | `baseURL`      | `https://chatgpt.com/backend-api/codex`                                                                                                                 | Override the upstream Codex base URL.                                                                                              |
+| OAuth client id     | `--oauth-client-id` | `clientId`     | `app_EMoamEEZ73f0CkXaXp7hrann`                                                                                                                          | Override the OAuth client id used for refresh.                                                                                     |
+| OAuth token URL     | `--oauth-token-url` | `tokenUrl`     | `https://auth.openai.com/oauth/token`                                                                                                                   | Override the OAuth token URL used for refresh.                                                                                     |
+| Auth file path      | `--oauth-file`      | `authFilePath` | `--oauth-file` path if provided, otherwise `$CHATGPT_LOCAL_HOME/auth.json`, `$CODEX_HOME/auth.json`, `~/.chatgpt-local/auth.json`, `~/.codex/auth.json` | Override where the local OAuth auth file is discovered.                                                                            |
+| Ensure fresh tokens | N/A                 | `ensureFresh`  | `true`                                                                                                                                                  | Control whether access tokens are refreshed automatically.                                                                         |
+| Provider name       | N/A                 | `name`         | `openai`                                                                                                                                                | Override the provider name exposed to Vercel AI SDK internals.                                                                     |
 
 ## Features
 
@@ -62,7 +62,7 @@ What currently works:
 - Working Endpoints:
   - `/v1/responses`
   - `/v1/chat/completions`
-  - `/v1/models` (with configurable model allowlist)
+  - `/v1/models` (account-aware by default, or overridden with `--models`)
 - Streaming Responses
 - Toolcalls
 - Reasoning Traces

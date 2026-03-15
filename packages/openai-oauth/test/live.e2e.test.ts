@@ -31,6 +31,18 @@ describe("openai oauth server live e2e", () => {
 	liveTest(
 		"supports responses and chat clients through the local server",
 		async () => {
+			const modelsResponse = await fetch(`${baseURL}/models`)
+			expect(modelsResponse.ok).toBe(true)
+			const modelsPayload = await modelsResponse.json()
+			expect(Array.isArray(modelsPayload.data)).toBe(true)
+			expect(modelsPayload.data.length).toBeGreaterThan(0)
+			expect(
+				modelsPayload.data.every(
+					(model: { id?: unknown }) =>
+						typeof model.id === "string" && model.id.length > 0,
+				),
+			).toBe(true)
+
 			const directResponse = await fetch(`${baseURL}/responses`, {
 				method: "POST",
 				headers: {

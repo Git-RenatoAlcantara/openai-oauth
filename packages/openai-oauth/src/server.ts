@@ -10,13 +10,13 @@ import {
 } from "../../openai-oauth-provider/src/index.js"
 import { handleChatCompletionsRequest } from "./chat-completions.js"
 import { createRequestLogger } from "./logging.js"
+import { createModelResolver } from "./models.js"
 import { handleResponsesRequest } from "./responses.js"
 import {
 	corsHeaders,
 	DEFAULT_HOST,
 	DEFAULT_PORT,
 	resolveAddress,
-	resolveModels,
 	toErrorResponse,
 	toJsonResponse,
 	toWebRequest,
@@ -32,7 +32,7 @@ const handleRoutes = async (
 	settings: OpenAIOAuthServerOptions,
 	provider: OpenAIOAuthProvider,
 	client: ReturnType<typeof createCodexOAuthClient>,
-	models: string[],
+	resolveModels: () => Promise<string[]>,
 	requestLogger: ReturnType<typeof createRequestLogger>,
 ): Promise<Response> => {
 	if (request.method === "OPTIONS") {
@@ -51,15 +51,24 @@ const handleRoutes = async (
 	}
 
 	if (request.method === "GET" && url.pathname === "/v1/models") {
-		return toJsonResponse({
-			object: "list",
-			data: models.map((id) => ({
-				id,
-				object: "model",
-				created: 0,
-				owned_by: "codex-oauth",
-			})),
-		})
+		try {
+			const models = await resolveModels()
+			return toJsonResponse({
+				object: "list",
+				data: models.map((id) => ({
+					id,
+					object: "model",
+					created: 0,
+					owned_by: "codex-oauth",
+				})),
+			})
+		} catch (error) {
+			return toErrorResponse(
+				error instanceof Error ? error.message : "Failed to load models.",
+				502,
+				"upstream_error",
+			)
+		}
 	}
 
 	if (request.method === "POST" && url.pathname === "/v1/responses") {
@@ -76,13 +85,13 @@ const handleRoutes = async (
 export const createOpenAIOAuthFetchHandler = (
 	settings: OpenAIOAuthServerOptions = {},
 ): ((request: Request) => Promise<Response>) => {
-	const models = resolveModels(settings.models)
 	const sharedSettings: CodexOAuthSettings = {
 		...settings,
 		responsesState: false,
 	}
 	const client = createCodexOAuthClient(sharedSettings)
 	const provider = createOpenAIOAuth(sharedSettings)
+	const resolveModels = createModelResolver(client, settings.models)
 	const requestLogger = createRequestLogger(settings)
 
 	return async (request) => {
@@ -92,7 +101,7 @@ export const createOpenAIOAuthFetchHandler = (
 				settings,
 				provider,
 				client,
-				models,
+				resolveModels,
 				requestLogger,
 			)
 		} catch (error) {
@@ -117,6 +126,11 @@ export const startOpenAIOAuthServer = async (
 			const response = await handler(request)
 			await writeWebResponse(res, response)
 		} catch (error) {
+			if (res.headersSent || res.writableEnded) {
+				res.destroy(error instanceof Error ? error : undefined)
+				return
+			}
+
 			const message =
 				error instanceof Error ? error.message : "Unexpected server error."
 			await writeWebResponse(res, toErrorResponse(message, 500, "server_error"))

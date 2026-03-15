@@ -1,8 +1,12 @@
 import { access } from "node:fs/promises"
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
-import { resolveAuthFileCandidates } from "../../openai-oauth-core/src/index.js"
+import {
+	createCodexOAuthClient,
+	resolveAuthFileCandidates,
+} from "../../openai-oauth-core/src/index.js"
 import { startOpenAIOAuthServer } from "./index.js"
+import { resolveOpenAIOAuthModels } from "./models.js"
 import { DEFAULT_PORT } from "./shared.js"
 
 export type CliArgs = {
@@ -76,8 +80,8 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
 }
 
 export const toServerOptions = (args: CliArgs) => ({
-	host: args.host ?? process.env.HOST,
-	port: args.port ?? Number(process.env.PORT ?? String(DEFAULT_PORT)),
+	host: args.host,
+	port: args.port ?? DEFAULT_PORT,
 	models: args.models,
 	baseURL: args.baseURL,
 	clientId: args.clientId,
@@ -115,12 +119,14 @@ const toMissingAuthFileMessage = (authFilePath: string | undefined): string => {
 
 const toStartupMessage = (
 	options: ReturnType<typeof toServerOptions>,
+	availableModels: string[],
 ): string => {
 	const baseUrl = `http://${options.host ?? "127.0.0.1"}:${options.port ?? DEFAULT_PORT}/v1`
 
 	return [
 		`OpenAI-compatible endpoint ready at ${baseUrl}`,
 		"Use this as your OpenAI base URL. No API key is required.",
+		`Available Models: ${availableModels.join(", ")}`,
 	].join("\n")
 }
 
@@ -132,14 +138,22 @@ export const runCli = async (argv: string[] = hideBin(process.argv)) => {
 		throw new Error(toMissingAuthFileMessage(options.authFilePath))
 	}
 
+	const client = createCodexOAuthClient({
+		...options,
+		responsesState: false,
+	})
+	const availableModels = await resolveOpenAIOAuthModels(client, options.models)
 	const server = await startOpenAIOAuthServer(options)
 
 	console.log(
-		toStartupMessage({
-			...options,
-			host: server.host,
-			port: server.port,
-		}),
+		toStartupMessage(
+			{
+				...options,
+				host: server.host,
+				port: server.port,
+			},
+			availableModels,
+		),
 	)
 
 	const shutdown = async () => {
