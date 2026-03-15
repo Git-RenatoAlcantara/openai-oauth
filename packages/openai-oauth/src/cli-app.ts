@@ -5,6 +5,7 @@ import {
 	createCodexOAuthClient,
 	resolveAuthFileCandidates,
 } from "../../openai-oauth-core/src/index.js"
+import packageJson from "../package.json" with { type: 'json' };
 import { startOpenAIOAuthServer } from "./index.js"
 import { resolveOpenAIOAuthModels } from "./models.js"
 import { DEFAULT_PORT } from "./shared.js"
@@ -33,46 +34,80 @@ const parseModels = (value: string | undefined): string[] | undefined => {
 	return models.length > 0 ? models : undefined
 }
 
-export const parseCliArgs = (argv: string[]): CliArgs => {
-	const parsed = yargs(argv)
+const helpLines = [
+	"Free OpenAI API access with your ChatGPT account.",
+	"",
+	"Usage",
+	"  npx openai-oauth@latest [options]",
+	"",
+	"Options",
+	"  --host <host>              Host interface to bind to.",
+	"  --port <port>              Port to listen on. Default: 10531",
+	"  --models <ids>             Comma-separated model ids to expose from /v1/models.",
+	"  --codex-version <version>  Codex API version to use for model discovery.",
+	"  --base-url <url>           Override the upstream Codex base URL.",
+	"  --oauth-client-id <id>     Override the OAuth client id used for refresh.",
+	"  --oauth-token-url <url>    Override the OAuth token URL used for refresh.",
+	"  --oauth-file <path>        Path to the local auth.json file.",
+	"",
+	"Flags",
+	"  --help                     Show help",
+	`  --version                  Show version (${packageJson.version})`,
+	"",
+	"Notes",
+	"  If no auth file is found, run: npx @openai/codex login",
+	"  By default, available models are discovered from your account.",
+]
+
+const createCliParser = (argv: string[]) =>
+	yargs(argv)
 		.scriptName("openai-oauth")
 		.strict()
-		.help()
+		.help(false)
+		.version(false)
 		.option("host", {
 			type: "string",
-			describe: "Host interface to bind the local proxy to.",
+			describe: "Host interface to bind to.",
 		})
 		.option("port", {
 			type: "number",
-			describe: "Port to bind the local proxy to.",
+			describe: "Port to listen on. Default: 10531",
 		})
 		.option("models", {
 			type: "string",
-			describe: "Comma-separated list of models exposed by /v1/models.",
+			describe: "Comma-separated model ids to expose from /v1/models.",
 			coerce: parseModels,
 		})
 		.option("codex-version", {
 			type: "string",
-			describe:
-				"Override the Codex API client version used for model discovery.",
+			describe: "Codex API version to use for model discovery.",
 		})
 		.option("base-url", {
 			type: "string",
-			describe: "Override the upstream Codex responses base URL.",
+			describe: "Override the upstream Codex base URL.",
 		})
 		.option("oauth-client-id", {
 			type: "string",
-			describe: "Override the OAuth client id used for token refresh.",
+			describe: "Override the OAuth client id used for refresh.",
 		})
 		.option("oauth-token-url", {
 			type: "string",
-			describe: "Override the OAuth token URL used for token refresh.",
+			describe: "Override the OAuth token URL used for refresh.",
 		})
 		.option("oauth-file", {
 			type: "string",
-			describe: "Override the auth.json file path used for local OAuth tokens.",
+			describe: "Path to the local auth.json file.",
 		})
-		.parseSync()
+
+const isHelpFlag = (argv: string[]): boolean =>
+	argv.includes("--help") || argv.includes("-h")
+
+const isVersionFlag = (argv: string[]): boolean => argv.includes("--version")
+
+export const toHelpMessage = (): string => helpLines.join("\n")
+
+export const parseCliArgs = (argv: string[]): CliArgs => {
+	const parsed = createCliParser(argv).parseSync()
 
 	return {
 		host: parsed.host,
@@ -139,6 +174,16 @@ const toStartupMessage = (
 }
 
 export const runCli = async (argv: string[] = hideBin(process.argv)) => {
+	if (isHelpFlag(argv)) {
+		console.log(toHelpMessage())
+		return
+	}
+
+	if (isVersionFlag(argv)) {
+		console.log(packageJson.version)
+		return
+	}
+
 	const args = parseCliArgs(argv)
 	const options = toServerOptions(args)
 	const existingAuthFile = await findExistingAuthFile(options.authFilePath)
@@ -187,4 +232,4 @@ export const runCli = async (argv: string[] = hideBin(process.argv)) => {
 	})
 }
 
-export { toMissingAuthFileMessage, toStartupMessage }
+export { createCliParser, toMissingAuthFileMessage, toStartupMessage }
