@@ -178,24 +178,38 @@ export const runCli = async (argv: string[] = hideBin(process.argv)) => {
 	const args = parseCliArgs(argv)
 	const options = toServerOptions(args)
 	const existingAuthFile = await findExistingAuthFile(options.authFilePath)
+
 	if (!existingAuthFile) {
-		throw new Error(toMissingAuthFileMessage(options.authFilePath))
+		console.error(toMissingAuthFileMessage(options.authFilePath))
+		console.error("Starting server without auth. Visit / to log in via browser.")
 	}
 
 	const client = createCodexOAuthClient({
 		...options,
 		responsesState: false,
 	})
-	const availableModels = await resolveOpenAIOAuthModels(
-		client,
-		options.models,
-		{
-			codexVersion: options.codexVersion,
-			onWarning: (message) => {
-				console.error(message)
-			},
-		},
-	)
+
+	let availableModels: string[] = options.models ?? []
+	if (existingAuthFile) {
+		try {
+			availableModels = await resolveOpenAIOAuthModels(
+				client,
+				options.models,
+				{
+					codexVersion: options.codexVersion,
+					onWarning: (message) => {
+						console.error(message)
+					},
+				},
+			)
+		} catch (error) {
+			console.error(
+				"Could not resolve models:",
+				error instanceof Error ? error.message : error,
+			)
+		}
+	}
+
 	const server = await startOpenAIOAuthServer(options)
 
 	console.log(
