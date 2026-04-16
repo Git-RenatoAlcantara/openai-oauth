@@ -81,18 +81,22 @@ const handleRoutes = async (
 	}
 
 	if (request.method === "POST" && url.pathname === "/auth/login") {
+		const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "")
 		const result = await new Promise<{ url: string; code: string } | null>((resolve) => {
 			const child = spawn("npx", ["@openai/codex", "login", "--device-auth"], {
 				shell: true,
 				stdio: ["ignore", "pipe", "pipe"],
+				env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
 			})
 			let output = ""
 			const timeout = setTimeout(() => { child.kill(); resolve(null) }, 30000)
 			const onData = (data: Buffer) => {
-				output += data.toString()
-				console.log("[auth/login] output:", data.toString().trim())
-				const urlMatch = output.match(/(https:\/\/[^\s]+)/)
-				const codeMatch = output.match(/code[:\s]+([A-Z0-9-]{6,})/i)
+				const clean = stripAnsi(data.toString())
+				output += clean
+				console.log("[auth/login] raw:", JSON.stringify(data.toString()))
+				console.log("[auth/login] clean:", clean.trim())
+				const urlMatch = output.match(/(https:\/\/auth\.openai\.com\/[^\s]+)/)
+				const codeMatch = output.match(/:\s+([A-Z]{4,}-[A-Z]{4,})/i) ?? output.match(/code\s*:\s*([A-Z0-9-]{6,})/i)
 				if (urlMatch && codeMatch) {
 					clearTimeout(timeout)
 					resolve({ url: urlMatch[1] as string, code: codeMatch[1] as string })
@@ -100,9 +104,13 @@ const handleRoutes = async (
 			}
 			child.stdout.on("data", onData)
 			child.stderr.on("data", onData)
-			child.on("close", () => { clearTimeout(timeout); resolve(null) })
+			child.on("close", () => {
+				console.log("[auth/login] process closed. Full output:", JSON.stringify(output))
+				clearTimeout(timeout)
+				resolve(null)
+			})
 		})
-		console.log("[auth/login] result:", result)
+		console.log("[auth/login] result:", JSON.stringify(result))
 		if (!result) {
 			return toJsonResponse({ ok: false, error: "Falha ao iniciar codex login." }, 500)
 		}
