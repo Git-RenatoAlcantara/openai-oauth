@@ -95,8 +95,8 @@ const handleRoutes = async (
 				output += clean
 				console.log("[auth/login] raw:", JSON.stringify(data.toString()))
 				console.log("[auth/login] clean:", clean.trim())
-				const urlMatch = output.match(/(https:\/\/auth\.openai\.com\/[^\s]+)/)
-				const codeMatch = output.match(/:\s+([A-Z]{4,}-[A-Z]{4,})/i) ?? output.match(/code\s*:\s*([A-Z0-9-]{6,})/i)
+				const urlMatch = output.match(/(https:\/\/auth\.openai\.com\/codex\/device)/)
+				const codeMatch = output.match(/\n\s+([A-Z0-9]{3,}-[A-Z0-9]{3,})\s*\n/)
 				if (urlMatch && codeMatch) {
 					clearTimeout(timeout)
 					resolve({ url: urlMatch[1] as string, code: codeMatch[1] as string })
