@@ -1,7 +1,101 @@
-import { spawn } from "node:child_process"
-import { access } from "node:fs/promises"
+import { createHash, randomBytes } from "node:crypto"
+import { access, mkdir, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+
+const CLIENT_ID =
+	process.env.CHATGPT_LOCAL_CLIENT_ID ?? "app_EMoamEEZ73f0CkXaXp7hrann"
+const ISSUER = process.env.CHATGPT_LOCAL_ISSUER ?? "https://auth.openai.com"
+const SCOPES =
+	"openid profile email offline_access api.connectors.read api.connectors.invoke"
+
+type PkceSession = {
+	codeVerifier: string
+	redirectUri: string
+	expiresAt: number
+}
+const pkceStore = new Map<string, PkceSession>()
+
+const base64url = (buf: Buffer): string =>
+	buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+
+export const buildLoginUrl = (
+	redirectUri: string,
+): { url: string; state: string } => {
+	const codeVerifier = base64url(randomBytes(32))
+	const codeChallenge = base64url(
+		createHash("sha256").update(codeVerifier).digest(),
+	)
+	const state = base64url(randomBytes(16))
+
+	pkceStore.set(state, {
+		codeVerifier,
+		redirectUri,
+		expiresAt: Date.now() + 10 * 60 * 1000,
+	})
+
+	const params = new URLSearchParams({
+		response_type: "code",
+		client_id: CLIENT_ID,
+		redirect_uri: redirectUri,
+		scope: SCOPES,
+		code_challenge: codeChallenge,
+		code_challenge_method: "S256",
+		state,
+		id_token_add_organizations: "true",
+		codex_cli_simplified_flow: "true",
+		originator: "codex_cli_rs",
+	})
+
+	return { url: `${ISSUER}/oauth/authorize?${params}`, state }
+}
+
+export const handleOAuthCallback = async (
+	code: string,
+	state: string,
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+	const session = pkceStore.get(state)
+	if (!session) return { ok: false, error: "Estado OAuth inválido ou expirado." }
+	if (Date.now() > session.expiresAt) {
+		pkceStore.delete(state)
+		return { ok: false, error: "Sessão OAuth expirada. Tente novamente." }
+	}
+	pkceStore.delete(state)
+
+	const tokenRes = await fetch(`${ISSUER}/oauth/token`, {
+		method: "POST",
+		headers: { "content-type": "application/x-www-form-urlencoded" },
+		body: new URLSearchParams({
+			grant_type: "authorization_code",
+			client_id: CLIENT_ID,
+			code,
+			redirect_uri: session.redirectUri,
+			code_verifier: session.codeVerifier,
+		}),
+	})
+
+	if (!tokenRes.ok) {
+		const text = await tokenRes.text()
+		return { ok: false, error: `Falha ao trocar tokens: ${text}` }
+	}
+
+	const tokens = (await tokenRes.json()) as Record<string, unknown>
+
+	const authFile = {
+		tokens: {
+			id_token: tokens.id_token,
+			access_token: tokens.access_token,
+			refresh_token: tokens.refresh_token,
+		},
+		last_refresh: new Date().toISOString(),
+	}
+
+	const authPath = AUTH_CANDIDATES[AUTH_CANDIDATES.length - 1] as string
+	await mkdir(path.dirname(authPath), { recursive: true })
+	await writeFile(authPath, JSON.stringify(authFile, null, 2), "utf-8")
+
+	return { ok: true }
+}
 
 const AUTH_CANDIDATES = [
 	process.env.CHATGPT_LOCAL_HOME
@@ -27,47 +121,7 @@ export const getAuthStatus = async (): Promise<{
 	return { authenticated: false }
 }
 
-export const startLoginAndGetUrl = (): Promise<string> =>
-	new Promise((resolve, reject) => {
-		const proc = spawn("npx", ["@openai/codex", "login"], {
-			shell: true,
-			env: process.env,
-		})
-
-		let resolved = false
-
-		const tryMatch = (text: string) => {
-			const match = text.match(
-				/https:\/\/auth\.openai\.com\/oauth\/authorize[^\s\n]+/,
-			)
-			if (match && !resolved) {
-				resolved = true
-				resolve(match[0])
-			}
-		}
-
-		proc.stdout?.on("data", (chunk: Buffer) => tryMatch(chunk.toString()))
-		proc.stderr?.on("data", (chunk: Buffer) => tryMatch(chunk.toString()))
-
-		proc.on("close", (code) => {
-			if (!resolved) {
-				reject(new Error(`Login process exited with code ${code}`))
-			}
-		})
-
-		proc.on("error", (err) => {
-			if (!resolved) reject(err)
-		})
-
-		setTimeout(() => {
-			if (!resolved) {
-				proc.kill()
-				reject(new Error("Login timed out after 30s"))
-			}
-		}, 30000)
-	})
-
-export const getLoginPageHtml = (authPath?: string): string => `<!DOCTYPE html>
+export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string => `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
@@ -130,25 +184,6 @@ export const getLoginPageHtml = (authPath?: string): string => `<!DOCTYPE html>
       text-decoration: none;
     }
     .btn:hover { background: #0d8a6a; }
-    .btn:disabled { background: #444; cursor: not-allowed; }
-    .url-box {
-      margin-top: 24px;
-      background: #111;
-      border: 1px solid #333;
-      border-radius: 8px;
-      padding: 16px;
-      text-align: left;
-      display: none;
-    }
-    .url-box.visible { display: block; }
-    .url-label { font-size: 0.75rem; color: #888; margin-bottom: 8px; }
-    .url-link {
-      word-break: break-all;
-      color: #60a5fa;
-      font-size: 0.8rem;
-      text-decoration: none;
-    }
-    .url-link:hover { text-decoration: underline; }
     .error-msg {
       margin-top: 16px;
       color: #f87171;
@@ -161,18 +196,6 @@ export const getLoginPageHtml = (authPath?: string): string => `<!DOCTYPE html>
       font-size: 0.75rem;
       color: #555;
     }
-    .spinner {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid #fff4;
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      vertical-align: middle;
-      margin-right: 8px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -187,50 +210,19 @@ export const getLoginPageHtml = (authPath?: string): string => `<!DOCTYPE html>
 				: `<div class="status err"><span class="dot"></span> Não autenticado</div>`
 		}
 
+    ${errorMsg ? `<div class="error-msg visible">${errorMsg}</div>` : ""}
+
     ${
 			!authPath
 				? `<div style="margin-top:8px;">
-      <button class="btn" id="loginBtn" onclick="doLogin()">Entrar com ChatGPT</button>
-    </div>
-    <div class="url-box" id="urlBox">
-      <div class="url-label">Abra esta URL no seu navegador para concluir o login:</div>
-      <a class="url-link" id="loginUrl" href="#" target="_blank"></a>
-    </div>
-    <div class="error-msg" id="errorMsg"></div>`
+      <a class="btn" href="/auth/login">Entrar com ChatGPT</a>
+    </div>`
 				: `<div style="margin-top:24px;">
       <a class="btn" href="/v1/models">Ver modelos disponíveis</a>
     </div>`
 		}
   </div>
 
-  <script>
-    async function doLogin() {
-      const btn = document.getElementById('loginBtn')
-      const urlBox = document.getElementById('urlBox')
-      const urlLink = document.getElementById('loginUrl')
-      const errorMsg = document.getElementById('errorMsg')
-
-      btn.disabled = true
-      btn.innerHTML = '<span class="spinner"></span>Aguardando...'
-      urlBox.classList.remove('visible')
-      errorMsg.classList.remove('visible')
-
-      try {
-        const res = await fetch('/auth/login', { method: 'POST' })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error?.message ?? 'Erro ao iniciar login')
-        urlLink.href = data.url
-        urlLink.textContent = data.url
-        urlBox.classList.add('visible')
-        window.open(data.url, '_blank')
-        btn.innerHTML = 'Aguardando callback...'
-      } catch (err) {
-        btn.disabled = false
-        btn.innerHTML = 'Entrar com ChatGPT'
-        errorMsg.textContent = err.message
-        errorMsg.classList.add('visible')
-      }
-    }
-  </script>
+  <script><\/script>
 </body>
 </html>`

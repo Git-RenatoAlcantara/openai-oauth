@@ -11,9 +11,10 @@ import {
 import { handleChatCompletionsRequest } from "./chat-completions.js"
 import { createRequestLogger } from "./logging.js"
 import {
+	buildLoginUrl,
 	getAuthStatus,
 	getLoginPageHtml,
-	startLoginAndGetUrl,
+	handleOAuthCallback,
 } from "./login-page.js"
 import { createModelResolver } from "./models.js"
 import { handleResponsesRequest } from "./responses.js"
@@ -63,17 +64,28 @@ const handleRoutes = async (
 		return toJsonResponse(status)
 	}
 
-	if (request.method === "POST" && url.pathname === "/auth/login") {
-		try {
-			const loginUrl = await startLoginAndGetUrl()
-			return toJsonResponse({ url: loginUrl })
-		} catch (error) {
-			return toErrorResponse(
-				error instanceof Error ? error.message : "Failed to start login.",
-				500,
-				"login_error",
-			)
+	if (request.method === "GET" && url.pathname === "/auth/login") {
+		const redirectUri = `${url.protocol}//${url.host}/auth/callback`
+		const { url: loginUrl } = buildLoginUrl(redirectUri)
+		return new Response(null, {
+			status: 302,
+			headers: { location: loginUrl },
+		})
+	}
+
+	if (request.method === "GET" && url.pathname === "/auth/callback") {
+		const code = url.searchParams.get("code")
+		const state = url.searchParams.get("state")
+		if (!code || !state) {
+			const html = getLoginPageHtml(undefined, "Callback inválido: code ou state ausente.")
+			return new Response(html, { status: 400, headers: { "content-type": "text/html; charset=utf-8" } })
 		}
+		const result = await handleOAuthCallback(code, state)
+		if (!result.ok) {
+			const html = getLoginPageHtml(undefined, result.error)
+			return new Response(html, { status: 400, headers: { "content-type": "text/html; charset=utf-8" } })
+		}
+		return new Response(null, { status: 302, headers: { location: "/" } })
 	}
 
 	if (request.method === "GET" && url.pathname === "/health") {
