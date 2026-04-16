@@ -10,6 +10,11 @@ import {
 } from "../../openai-oauth-provider/src/index.js"
 import { handleChatCompletionsRequest } from "./chat-completions.js"
 import { createRequestLogger } from "./logging.js"
+import {
+	getAuthStatus,
+	getLoginPageHtml,
+	startLoginAndGetUrl,
+} from "./login-page.js"
 import { createModelResolver } from "./models.js"
 import { handleResponsesRequest } from "./responses.js"
 import {
@@ -43,6 +48,34 @@ const handleRoutes = async (
 	}
 
 	const url = new URL(request.url)
+
+	if (request.method === "GET" && url.pathname === "/") {
+		const status = await getAuthStatus()
+		const html = getLoginPageHtml(status.path)
+		return new Response(html, {
+			status: 200,
+			headers: { "content-type": "text/html; charset=utf-8" },
+		})
+	}
+
+	if (request.method === "GET" && url.pathname === "/auth/status") {
+		const status = await getAuthStatus()
+		return toJsonResponse(status)
+	}
+
+	if (request.method === "POST" && url.pathname === "/auth/login") {
+		try {
+			const loginUrl = await startLoginAndGetUrl()
+			return toJsonResponse({ url: loginUrl })
+		} catch (error) {
+			return toErrorResponse(
+				error instanceof Error ? error.message : "Failed to start login.",
+				500,
+				"login_error",
+			)
+		}
+	}
+
 	if (request.method === "GET" && url.pathname === "/health") {
 		return toJsonResponse({
 			ok: true,
