@@ -311,14 +311,20 @@ export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string =
         btn.disabled = true;
         btn.textContent = 'Iniciando...';
         status.style.display = 'block';
-        status.textContent = 'Executando codex login...';
+        status.textContent = 'Executando codex login (device auth)...';
         try {
           const res = await fetch('/auth/login', { method: 'POST' });
           const data = await res.json();
           if (!data.ok) { throw new Error(data.error); }
-          window.open(data.url, '_blank');
+          status.innerHTML =
+            '<div style="margin:16px 0">' +
+            '<p>1. Abra o link abaixo:</p>' +
+            '<a href="' + data.url + '" target="_blank" style="color:#10a37f;word-break:break-all;">' + data.url + '</a>' +
+            '<p style="margin-top:12px;">2. Digite o código:</p>' +
+            '<div style="font-size:2rem;font-weight:700;letter-spacing:4px;color:#fff;margin:8px 0;user-select:all;">' + data.code + '</div>' +
+            '<p style="color:#888;font-size:0.8rem;">Aguardando autenticação...</p>' +
+            '</div>';
           btn.textContent = 'Aguardando login...';
-          status.textContent = 'Complete o login na aba que abriu. Esta página vai atualizar automaticamente.';
           const poll = setInterval(async () => {
             try {
               const s = await fetch('/auth/status').then(r => r.json());

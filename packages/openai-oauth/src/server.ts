@@ -81,31 +81,32 @@ const handleRoutes = async (
 	}
 
 	if (request.method === "POST" && url.pathname === "/auth/login") {
-		const loginUrl = await new Promise<string | null>((resolve) => {
-			const child = spawn("npx", ["@openai/codex", "login"], {
+		const result = await new Promise<{ url: string; code: string } | null>((resolve) => {
+			const child = spawn("npx", ["@openai/codex", "login", "--device-auth"], {
 				shell: true,
 				stdio: ["ignore", "pipe", "pipe"],
 			})
 			let output = ""
-			const timeout = setTimeout(() => { child.kill(); resolve(null) }, 15000)
-			child.stdout.on("data", (data: Buffer) => {
+			const timeout = setTimeout(() => { child.kill(); resolve(null) }, 30000)
+			const onData = (data: Buffer) => {
 				output += data.toString()
-				const match = output.match(/(https:\/\/auth\.openai\.com\/oauth\/authorize[^\s]+)/)
-				if (match) {
+				console.log("[auth/login] output:", data.toString().trim())
+				const urlMatch = output.match(/(https:\/\/[^\s]+)/)
+				const codeMatch = output.match(/code[:\s]+([A-Z0-9-]{6,})/i)
+				if (urlMatch && codeMatch) {
 					clearTimeout(timeout)
-					resolve(match[1] as string)
+					resolve({ url: urlMatch[1] as string, code: codeMatch[1] as string })
 				}
-			})
-			child.stderr.on("data", (data: Buffer) => {
-				console.log("[auth/login] stderr:", data.toString())
-			})
+			}
+			child.stdout.on("data", onData)
+			child.stderr.on("data", onData)
 			child.on("close", () => { clearTimeout(timeout); resolve(null) })
 		})
-		console.log("[auth/login] loginUrl:", loginUrl)
-		if (!loginUrl) {
+		console.log("[auth/login] result:", result)
+		if (!result) {
 			return toJsonResponse({ ok: false, error: "Falha ao iniciar codex login." }, 500)
 		}
-		return toJsonResponse({ ok: true, url: loginUrl })
+		return toJsonResponse({ ok: true, url: result.url, code: result.code })
 	}
 
 	if (request.method === "GET" && url.pathname === "/health") {
