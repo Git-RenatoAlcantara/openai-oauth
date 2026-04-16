@@ -7,7 +7,7 @@ import type {
 import type { AddressInfo } from "node:net"
 import type { ChatRequest, JsonValue, UsageLike } from "./types.js"
 
-export const DEFAULT_HOST = "127.0.0.1"
+export const DEFAULT_HOST = "0.0.0.0"
 export const DEFAULT_PORT = 10531
 
 const jsonHeaders = {
