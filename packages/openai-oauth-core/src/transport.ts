@@ -356,8 +356,9 @@ export const createCodexOAuthFetch = (
 		)
 	}
 
-	if (typeof fetch.preconnect === "function") {
-		codexFetch.preconnect = fetch.preconnect.bind(fetch)
+	const fetchAny = fetch as unknown as Record<string, unknown>
+	if (typeof fetchAny.preconnect === "function") {
+		;(codexFetch as unknown as Record<string, unknown>).preconnect = fetchAny.preconnect.bind(fetch)
 	}
 
 	return codexFetch

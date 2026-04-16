@@ -36,7 +36,7 @@ const emptyUsage = (): LanguageModelV3Usage => ({
 	inputTokens: undefined,
 	outputTokens: undefined,
 	totalTokens: undefined,
-})
+} as unknown as LanguageModelV3Usage)
 
 const mergeProviderMetadata = (
 	left: SharedV3ProviderMetadata | undefined,
@@ -66,7 +66,7 @@ class CodexResponsesLanguageModel extends OpenAIResponsesLanguageModel {
 		const activeTextById = new Map<string, LanguageModelV3Content>()
 		const activeReasoningById = new Map<string, LanguageModelV3Content>()
 
-		let finishReason: LanguageModelV3FinishReason = "unknown"
+		let finishReason: LanguageModelV3FinishReason = "other" as unknown as LanguageModelV3FinishReason
 		let usage: LanguageModelV3Usage = emptyUsage()
 		let providerMetadata: SharedV3ProviderMetadata | undefined
 		let responseMetadata: LanguageModelV3ResponseMetadata | undefined
@@ -198,13 +198,17 @@ class CodexResponsesLanguageModel extends OpenAIResponsesLanguageModel {
 					}
 
 					case "finish": {
-						finishReason = part.finishReason
-						usage = part.usage
+						finishReason = part.finishReason as LanguageModelV3FinishReason
+						usage = part.usage as unknown as LanguageModelV3Usage
 						providerMetadata = part.providerMetadata
 						break
 					}
 
 					case "raw": {
+						break
+					}
+
+					case "tool-approval-request": {
 						break
 					}
 
