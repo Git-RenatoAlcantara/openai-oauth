@@ -62,24 +62,34 @@ export const handleOAuthCallback = async (
 	}
 	pkceStore.delete(state)
 
+	const tokenBody = new URLSearchParams({
+		grant_type: "authorization_code",
+		client_id: CLIENT_ID,
+		code,
+		redirect_uri: session.redirectUri,
+		code_verifier: session.codeVerifier,
+	})
+	console.log("[oauth/token] request:", {
+		url: `${ISSUER}/oauth/token`,
+		client_id: CLIENT_ID,
+		redirect_uri: session.redirectUri,
+		code: `${code.slice(0, 8)}...`,
+	})
+
 	const tokenRes = await fetch(`${ISSUER}/oauth/token`, {
 		method: "POST",
 		headers: { "content-type": "application/x-www-form-urlencoded" },
-		body: new URLSearchParams({
-			grant_type: "authorization_code",
-			client_id: CLIENT_ID,
-			code,
-			redirect_uri: session.redirectUri,
-			code_verifier: session.codeVerifier,
-		}),
+		body: tokenBody,
 	})
 
 	if (!tokenRes.ok) {
 		const text = await tokenRes.text()
+		console.log("[oauth/token] ERRO:", tokenRes.status, text)
 		return { ok: false, error: `Falha ao trocar tokens: ${text}` }
 	}
 
 	const tokens = (await tokenRes.json()) as Record<string, unknown>
+	console.log("[oauth/token] OK - keys:", Object.keys(tokens))
 
 	const authFile = {
 		tokens: {
@@ -277,8 +287,11 @@ export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string =
     <div style="margin-top:24px;">
       <a class="btn" href="/v1/models">Ver modelos disponíveis</a>
     </div>`
-        : `<div class="steps">
-      <strong style="color:#fff;">Como autenticar:</strong><br/>
+        : `<button id="login-btn" class="btn" onclick="startLogin()">Login com OpenAI</button>
+    <div id="login-status" style="margin-top:12px;text-align:center;font-size:0.85rem;color:#888;display:none;"></div>
+    <div style="margin:24px 0 12px;text-align:center;color:#555;font-size:0.8rem;">ou cole o auth.json manualmente</div>
+    <div class="steps">
+      <strong style="color:#fff;">Como autenticar manualmente:</strong><br/>
       1. No seu computador local, execute:<br/>
       <code>npx @openai/codex login</code><br/>
       2. Faça login no navegador que abrir.<br/>
@@ -289,8 +302,37 @@ export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string =
     <form method="POST" action="/auth/upload">
       <label for="auth">Conteúdo do auth.json:</label>
       <textarea id="auth" name="auth" placeholder='{"tokens": {"access_token": "...", "refresh_token": "..."}}' required></textarea>
-      <button type="submit" class="btn">Salvar e autenticar</button>
-    </form>`
+      <button type="submit" class="btn" style="background:#333;">Salvar e autenticar</button>
+    </form>
+    <script>
+      async function startLogin() {
+        const btn = document.getElementById('login-btn');
+        const status = document.getElementById('login-status');
+        btn.disabled = true;
+        btn.textContent = 'Iniciando...';
+        status.style.display = 'block';
+        status.textContent = 'Executando codex login...';
+        try {
+          const res = await fetch('/auth/login', { method: 'POST' });
+          const data = await res.json();
+          if (!data.ok) { throw new Error(data.error); }
+          window.open(data.url, '_blank');
+          btn.textContent = 'Aguardando login...';
+          status.textContent = 'Complete o login na aba que abriu. Esta página vai atualizar automaticamente.';
+          const poll = setInterval(async () => {
+            try {
+              const s = await fetch('/auth/status').then(r => r.json());
+              if (s.authenticated) { clearInterval(poll); window.location.reload(); }
+            } catch {}
+          }, 2000);
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = 'Login com OpenAI';
+          status.textContent = 'Erro: ' + e.message;
+          status.style.color = '#f87171';
+        }
+      }
+    </script>`
     }
   </div>
 </body>

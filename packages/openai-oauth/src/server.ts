@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import {
@@ -11,10 +12,8 @@ import {
 import { handleChatCompletionsRequest } from "./chat-completions.js"
 import { createRequestLogger } from "./logging.js"
 import {
-	buildLoginUrl,
 	getAuthStatus,
 	getLoginPageHtml,
-	handleOAuthCallback,
 	saveAuthJson,
 } from "./login-page.js"
 import { createModelResolver } from "./models.js"
@@ -81,28 +80,32 @@ const handleRoutes = async (
 		return new Response(null, { status: 302, headers: { location: "/" } })
 	}
 
-	if (request.method === "GET" && url.pathname === "/auth/login") {
-		const redirectUri = `${url.protocol}//${url.host}/auth/callback`
-		const { url: loginUrl } = buildLoginUrl(redirectUri)
-		return new Response(null, {
-			status: 302,
-			headers: { location: loginUrl },
+	if (request.method === "POST" && url.pathname === "/auth/login") {
+		const loginUrl = await new Promise<string | null>((resolve) => {
+			const child = spawn("npx", ["@openai/codex", "login"], {
+				shell: true,
+				stdio: ["ignore", "pipe", "pipe"],
+			})
+			let output = ""
+			const timeout = setTimeout(() => { child.kill(); resolve(null) }, 15000)
+			child.stdout.on("data", (data: Buffer) => {
+				output += data.toString()
+				const match = output.match(/(https:\/\/auth\.openai\.com\/oauth\/authorize[^\s]+)/)
+				if (match) {
+					clearTimeout(timeout)
+					resolve(match[1] as string)
+				}
+			})
+			child.stderr.on("data", (data: Buffer) => {
+				console.log("[auth/login] stderr:", data.toString())
+			})
+			child.on("close", () => { clearTimeout(timeout); resolve(null) })
 		})
-	}
-
-	if (request.method === "GET" && url.pathname === "/auth/callback") {
-		const code = url.searchParams.get("code")
-		const state = url.searchParams.get("state")
-		if (!code || !state) {
-			const html = getLoginPageHtml(undefined, "Callback inválido: code ou state ausente.")
-			return new Response(html, { status: 400, headers: { "content-type": "text/html; charset=utf-8" } })
+		console.log("[auth/login] loginUrl:", loginUrl)
+		if (!loginUrl) {
+			return toJsonResponse({ ok: false, error: "Falha ao iniciar codex login." }, 500)
 		}
-		const result = await handleOAuthCallback(code, state)
-		if (!result.ok) {
-			const html = getLoginPageHtml(undefined, result.error)
-			return new Response(html, { status: 400, headers: { "content-type": "text/html; charset=utf-8" } })
-		}
-		return new Response(null, { status: 302, headers: { location: "/" } })
+		return toJsonResponse({ ok: true, url: loginUrl })
 	}
 
 	if (request.method === "GET" && url.pathname === "/health") {
