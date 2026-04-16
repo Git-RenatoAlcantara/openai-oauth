@@ -121,6 +121,26 @@ export const getAuthStatus = async (): Promise<{
 	return { authenticated: false }
 }
 
+export const saveAuthJson = async (
+	content: string,
+): Promise<{ ok: true; path: string } | { ok: false; error: string }> => {
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(content)
+	} catch {
+		return { ok: false, error: "JSON inválido." }
+	}
+
+	if (typeof parsed !== "object" || parsed === null) {
+		return { ok: false, error: "Conteúdo inválido: deve ser um objeto JSON." }
+	}
+
+	const authPath = AUTH_CANDIDATES[AUTH_CANDIDATES.length - 1] as string
+	await mkdir(path.dirname(authPath), { recursive: true })
+	await writeFile(authPath, JSON.stringify(parsed, null, 2), "utf-8")
+	return { ok: true, path: authPath }
+}
+
 export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string => `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -137,6 +157,7 @@ export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string =
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 24px;
     }
     .card {
       background: #1a1a1a;
@@ -144,19 +165,20 @@ export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string =
       border-radius: 12px;
       padding: 40px;
       width: 100%;
-      max-width: 480px;
-      text-align: center;
+      max-width: 540px;
     }
     .logo {
       font-size: 1.5rem;
       font-weight: 700;
       margin-bottom: 8px;
       color: #fff;
+      text-align: center;
     }
     .subtitle {
       font-size: 0.875rem;
       color: #888;
       margin-bottom: 32px;
+      text-align: center;
     }
     .status {
       display: inline-flex;
@@ -182,20 +204,56 @@ export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string =
       cursor: pointer;
       transition: background 0.2s;
       text-decoration: none;
+      width: 100%;
+      text-align: center;
     }
     .btn:hover { background: #0d8a6a; }
     .error-msg {
-      margin-top: 16px;
+      margin-top: 12px;
       color: #f87171;
       font-size: 0.85rem;
-      display: none;
     }
-    .error-msg.visible { display: block; }
     .auth-path {
       margin-top: 12px;
       font-size: 0.75rem;
       color: #555;
+      text-align: center;
     }
+    .steps {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      font-size: 0.85rem;
+      color: #bbb;
+      line-height: 1.7;
+    }
+    .steps code {
+      background: #222;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: monospace;
+      color: #10a37f;
+    }
+    textarea {
+      width: 100%;
+      height: 140px;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #e5e5e5;
+      font-family: monospace;
+      font-size: 0.8rem;
+      padding: 12px;
+      resize: vertical;
+      margin-bottom: 12px;
+      outline: none;
+    }
+    textarea:focus { border-color: #10a37f; }
+    label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 8px; }
+    .center { text-align: center; }
   </style>
 </head>
 <body>
@@ -203,26 +261,37 @@ export const getLoginPageHtml = (authPath?: string, errorMsg?: string): string =
     <div class="logo">openai-oauth</div>
     <div class="subtitle">Proxy local compatível com a API OpenAI</div>
 
-    ${
-			authPath
-				? `<div class="status ok"><span class="dot"></span> Autenticado</div>
-    <p class="auth-path">${authPath}</p>`
-				: `<div class="status err"><span class="dot"></span> Não autenticado</div>`
-		}
+    <div class="center">
+      ${
+        authPath
+          ? `<div class="status ok"><span class="dot"></span> Autenticado</div>`
+          : `<div class="status err"><span class="dot"></span> Não autenticado</div>`
+      }
+    </div>
 
-    ${errorMsg ? `<div class="error-msg visible">${errorMsg}</div>` : ""}
+    ${errorMsg ? `<div class="error-msg">${errorMsg}</div>` : ""}
 
     ${
-			!authPath
-				? `<div style="margin-top:8px;">
-      <a class="btn" href="/auth/login">Entrar com ChatGPT</a>
-    </div>`
-				: `<div style="margin-top:24px;">
+      authPath
+        ? `<p class="auth-path">Arquivo: ${authPath}</p>
+    <div style="margin-top:24px;">
       <a class="btn" href="/v1/models">Ver modelos disponíveis</a>
     </div>`
-		}
+        : `<div class="steps">
+      <strong style="color:#fff;">Como autenticar:</strong><br/>
+      1. No seu computador local, execute:<br/>
+      <code>npx @openai/codex login</code><br/>
+      2. Faça login no navegador que abrir.<br/>
+      3. Copie o conteúdo do arquivo gerado:<br/>
+      <code>~/.codex/auth.json</code><br/>
+      4. Cole abaixo e clique em Salvar.
+    </div>
+    <form method="POST" action="/auth/upload">
+      <label for="auth">Conteúdo do auth.json:</label>
+      <textarea id="auth" name="auth" placeholder='{"tokens": {"access_token": "...", "refresh_token": "..."}}' required></textarea>
+      <button type="submit" class="btn">Salvar e autenticar</button>
+    </form>`
+    }
   </div>
-
-  <script><\/script>
 </body>
 </html>`

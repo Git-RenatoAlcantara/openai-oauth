@@ -15,6 +15,7 @@ import {
 	getAuthStatus,
 	getLoginPageHtml,
 	handleOAuthCallback,
+	saveAuthJson,
 } from "./login-page.js"
 import { createModelResolver } from "./models.js"
 import { handleResponsesRequest } from "./responses.js"
@@ -62,6 +63,22 @@ const handleRoutes = async (
 	if (request.method === "GET" && url.pathname === "/auth/status") {
 		const status = await getAuthStatus()
 		return toJsonResponse(status)
+	}
+
+	if (request.method === "POST" && url.pathname === "/auth/upload") {
+		let body: string
+		try {
+			const formData = await request.formData()
+			body = (formData.get("auth") as string | null) ?? ""
+		} catch {
+			body = await request.text()
+		}
+		const result = await saveAuthJson(body)
+		if (!result.ok) {
+			const html = getLoginPageHtml(undefined, result.error)
+			return new Response(html, { status: 400, headers: { "content-type": "text/html; charset=utf-8" } })
+		}
+		return new Response(null, { status: 302, headers: { location: "/" } })
 	}
 
 	if (request.method === "GET" && url.pathname === "/auth/login") {
